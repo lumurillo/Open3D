@@ -181,7 +181,15 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     }
 
     std::unordered_map<std::string, bool> primary_attr_init = {
-            {"positions", false}, {"normals", false}, {"colors", false}};
+            {"positions", false},
+            {"normals", false},
+            {"colors", false},
+            {"opacity", false},
+            {"rot", false},
+            {"scale", false},
+            {"f_dc", false},
+            {"f_rest", false},
+        };
 
     p_ply_property attribute = ply_get_next_property(element, nullptr);
 
