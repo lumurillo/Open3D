@@ -478,5 +478,22 @@ TEST(TPointCloudIO, ReadWritePointCloudAsPCD) {
     EXPECT_TRUE(ascii_f32_pcd.GetPointColors().AllClose(color_uint8));
 }
 
+// Reading binary_little_endian with colors and normals.
+TEST(TPointCloudIO, ReadPointCloudFromSPLAT1) {
+    t::geometry::PointCloud pcd;
+
+    std::string filename =
+            utility::filesystem::GetTempDirectoryPath() + "/test_read.splat";
+    t::io::ReadPointCloud(filename, pcd,
+                          {"auto", false, false, true});
+    EXPECT_EQ(pcd.GetPointAttr("positions").GetLength(), 281498*3);
+    EXPECT_EQ(pcd.GetPointAttr("scale").GetLength(), 281498*3);
+    EXPECT_EQ(pcd.GetPointAttr("rot").GetLength(), 281498*4);
+    EXPECT_EQ(pcd.GetPointAttr("opacity").GetLength(), 281498);
+    EXPECT_EQ(pcd.GetPointAttr("f_dc").GetLength(), 281498*3);
+    EXPECT_EQ(pcd.GetPointAttr("f_rest").GetLength(), 281498*3);
+    EXPECT_FALSE(pcd.HasPointAttr("x"));
+}
+
 }  // namespace tests
 }  // namespace open3d
