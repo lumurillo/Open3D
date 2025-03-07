@@ -161,40 +161,11 @@ static std::tuple<std::string, int, int> GetNameStrideOffsetForAttribute(
     return std::make_tuple(name, 1, 0);
 }
 
-bool CheckMandatory3DGSProperty(
-    const geometry::PointCloud &pointcloud,
-    const std::string &property,
-    const core::SizeVector &dims) {
-
-    if (!pointcloud.HasPointAttr(property)) {
-        return false;
-    }
-
-    core::AssertTensorShape(pointcloud.GetPointAttr(property), dims);
-    return true;
-}
-
-bool Validate3DGSPointCloudProperties(const geometry::PointCloud &pointcloud)
-{
-    int64_t num_points = 0;
-
-    if (pointcloud.IsEmpty()) {
-        utility::LogWarning("PLY operation failed: point cloud has 0 points.");
-        return false;
-    }
-
-    num_points = pointcloud.GetPointPositions().GetLength();
-
-    // Assert attribute shapes.
-    bool valid_positions = CheckMandatory3DGSProperty(pointcloud, "positions", {num_points, 3});
-    bool valid_normals = CheckMandatory3DGSProperty(pointcloud, "normals", {num_points, 3});
-    bool valid_opacity = CheckMandatory3DGSProperty(pointcloud, "opacity", {num_points, 1});
-    bool valid_rot = CheckMandatory3DGSProperty(pointcloud, "rot", {num_points, 4});
-    bool valid_scale = CheckMandatory3DGSProperty(pointcloud, "scale", {num_points, 3});
-    bool valid_f_dc = CheckMandatory3DGSProperty(pointcloud, "f_dc", {num_points, 3});
-    bool valid_f_rest = CheckMandatory3DGSProperty(pointcloud, "f_rest", {num_points, 3});
-
-    return (valid_positions && valid_normals && valid_opacity && valid_rot && valid_scale && valid_f_dc && valid_f_rest);
+bool Is3DGSPointCloud(const geometry::PointCloud &pointcloud){
+    return (pointcloud.HasPointAttr("opacity") &&
+            pointcloud.HasPointAttr("rot") &&
+            pointcloud.HasPointAttr("scale") &&
+            pointcloud.HasPointAttr("f_dc"));
 }
 
 bool ReadPointCloudFromPLY(const std::string &filename,
@@ -321,11 +292,7 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     ply_close(ply_file);
     reporter.Finish();
 
-    bool is_3dgs = pointcloud.HasPointAttr("opacity") &&
-                   pointcloud.HasPointAttr("rot") &&
-                   pointcloud.HasPointAttr("scale") &&
-                   pointcloud.HasPointAttr("f_dc");
-    if (is_3dgs) {
+    if (Is3DGSPointCloud(pointcloud)) {
         utility::LogInfo("PLY file identified as 3DGS format.");
     }
     if (pointcloud.HasPointAttr("f_rest")) {
@@ -374,12 +341,46 @@ struct AttributePtr {
     const int group_size_;
 };
 
+bool CheckMandatory3DGSProperty(
+    const geometry::PointCloud &pointcloud,
+    const std::string &property,
+    const core::SizeVector &dims) {
+
+    if (!pointcloud.HasPointAttr(property)) {
+        return false;
+    }
+
+    core::AssertTensorShape(pointcloud.GetPointAttr(property), dims);
+    return true;
+}
+
+bool Validate3DGSPointCloudProperties(const geometry::PointCloud &pointcloud)
+{
+    int64_t num_points = pointcloud.GetPointPositions().GetLength();
+
+    // Assert attribute shapes.
+    bool valid_positions = CheckMandatory3DGSProperty(pointcloud, "positions", {num_points, 3});
+    bool valid_normals = CheckMandatory3DGSProperty(pointcloud, "normals", {num_points, 3});
+    bool valid_opacity = CheckMandatory3DGSProperty(pointcloud, "opacity", {num_points, 1});
+    bool valid_rot = CheckMandatory3DGSProperty(pointcloud, "rot", {num_points, 4});
+    bool valid_scale = CheckMandatory3DGSProperty(pointcloud, "scale", {num_points, 3});
+    bool valid_f_dc = CheckMandatory3DGSProperty(pointcloud, "f_dc", {num_points, 3});
+
+    return (valid_positions && valid_normals && valid_opacity && valid_rot && valid_scale && valid_f_dc);
+}
+
 bool WritePointCloudToPLY(const std::string &filename,
                           const geometry::PointCloud &pointcloud,
                           const open3d::io::WritePointCloudOption &params) {
+
     if (pointcloud.IsEmpty()) {
         utility::LogWarning("Write PLY failed: point cloud has 0 points.");
         return false;
+    }
+
+    if (Is3DGSPointCloud(pointcloud)) {
+        utility::LogInfo("PLY point cloud identified as 3DGS format.");
+        Validate3DGSPointCloudProperties(pointcloud);
     }
 
     geometry::TensorMap t_map(pointcloud.GetPointAttr().Contiguous());
