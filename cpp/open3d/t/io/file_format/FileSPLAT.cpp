@@ -24,6 +24,7 @@ namespace t {
 namespace io {
 
 #define SH_C0 0.28209479177387814
+#define SPLAT_GAUSSIAN_BYTE_SIZE 32
 
 struct AttributePtr {
     AttributePtr(const core::Dtype &dtype,
@@ -156,20 +157,19 @@ bool ReadPointCloudFromSPLAT(const std::string &filename,
         reporter.SetTotal(file.GetFileSize());
 
         //Constants
-        constexpr size_t data_size = 32;
-        char buffer[data_size];
-        int numberOfPoints = 0;
+        char buffer[SPLAT_GAUSSIAN_BYTE_SIZE];
+        int number_of_points = 0;
 
         // Vectors to store the data
-        std::vector<float> positionVector;
-        std::vector<float> scaleVector;
-        std::vector<float> rotationVector;
-        std::vector<float> opacityVector;
-        std::vector<float> f_dcVector;
-        std::vector<float> f_restVector;
+        std::vector<float> position_vector;
+        std::vector<float> scale_vector;
+        std::vector<float> rotation_vector;
+        std::vector<float> opacity_vector;
+        std::vector<float> f_dc_vector;
+        std::vector<float> f_rest_vector;
 
         // Read the data
-        while (file.ReadData(buffer, data_size)) {
+        while (file.ReadData(buffer, SPLAT_GAUSSIAN_BYTE_SIZE)) {
             float positions[3];
             float scale[3];
             uint8_t color[4];
@@ -202,43 +202,47 @@ bool ReadPointCloudFromSPLAT(const std::string &filename,
             }
 
             // Add the data to the vectors
-            positionVector.insert(positionVector.end(), positions, positions + 3);
-            scaleVector.insert(scaleVector.end(), scale, scale + 3);
-            rotationVector.insert(rotationVector.end(), rot_float, rot_float + 4);
-            opacityVector.insert(opacityVector.end(), opacity, opacity + 1);
-            f_dcVector.insert(f_dcVector.end(), f_dc, f_dc + 3);
-            f_restVector.insert(f_restVector.end(), f_rest, f_rest + 3);
+            position_vector.insert(position_vector.end(), positions, positions + 3);
+            scale_vector.insert(scale_vector.end(), scale, scale + 3);
+            rotation_vector.insert(rotation_vector.end(), rot_float, rot_float + 4);
+            opacity_vector.insert(opacity_vector.end(), opacity, opacity + 1);
+            f_dc_vector.insert(f_dc_vector.end(), f_dc, f_dc + 3);
+            f_rest_vector.insert(f_rest_vector.end(), f_rest, f_rest + 3);
 
-            reporter.Update(file.CurPos());
-            numberOfPoints++;
+
+            number_of_points++;
+            if (number_of_points % 1000 == 0) {
+                reporter.Update(file.CurPos());
+            }
         }
 
+        //Initialize the tensor
         core::Dtype dtype = core::Float32;
-        core::SizeVector shape = {static_cast<int64_t>(positionVector.size())};
-        auto positionBuffer = core::Tensor(positionVector,shape,dtype);
+        core::SizeVector shape = {static_cast<int64_t>(position_vector.size())};
+        auto position_buffer = core::Tensor(position_vector,shape,dtype);
 
-        shape = {static_cast<int64_t>(scaleVector.size())};
-        auto scaleBuffer = core::Tensor(scaleVector,shape,dtype);
+        shape = {static_cast<int64_t>(scale_vector.size())};
+        auto scale_buffer = core::Tensor(scale_vector,shape,dtype);
 
-        shape = {static_cast<int64_t>(rotationVector.size())};
-        auto rotationBuffer = core::Tensor(rotationVector,shape,dtype);
+        shape = {static_cast<int64_t>(rotation_vector.size())};
+        auto rotation_buffer = core::Tensor(rotation_vector,shape,dtype);
 
-        shape = {static_cast<int64_t>(opacityVector.size())};
-        auto opacityBuffer = core::Tensor(opacityVector,shape,dtype);
+        shape = {static_cast<int64_t>(opacity_vector.size())};
+        auto opacity_buffer = core::Tensor(opacity_vector,shape,dtype);
 
-        shape = {static_cast<int64_t>(f_dcVector.size())};
-        auto f_dcBuffer = core::Tensor(f_dcVector,shape,dtype);
+        shape = {static_cast<int64_t>(f_dc_vector.size())};
+        auto f_dc_buffer = core::Tensor(f_dc_vector,shape,dtype);
 
-        shape = {static_cast<int64_t>(f_restVector.size())};
-        auto f_restBuffer = core::Tensor(f_restVector,shape,dtype);
+        shape = {static_cast<int64_t>(f_rest_vector.size())};
+        auto f_rest_buffer = core::Tensor(f_rest_vector,shape,dtype);
 
         // Set the attributes
-        pointcloud.SetPointAttr("positions", positionBuffer);
-        pointcloud.SetPointAttr("scale", scaleBuffer);
-        pointcloud.SetPointAttr("rot", rotationBuffer);
-        pointcloud.SetPointAttr("opacity", opacityBuffer);
-        pointcloud.SetPointAttr("f_dc", f_dcBuffer);
-        pointcloud.SetPointAttr("f_rest", f_restBuffer);
+        pointcloud.SetPointAttr("positions", position_buffer);
+        pointcloud.SetPointAttr("scale", scale_buffer);
+        pointcloud.SetPointAttr("rot", rotation_buffer);
+        pointcloud.SetPointAttr("opacity", opacity_buffer);
+        pointcloud.SetPointAttr("f_dc", f_dc_buffer);
+        pointcloud.SetPointAttr("f_rest", f_rest_buffer);
 
         // Report progress
         reporter.Finish();
