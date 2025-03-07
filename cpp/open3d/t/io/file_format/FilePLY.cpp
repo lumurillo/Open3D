@@ -147,7 +147,7 @@ static std::tuple<std::string, int, int> GetNameStrideOffsetForAttribute(
     }
     if (name.rfind("f_rest_", 0) == 0) {
         int offset = std::stoi(name.substr(7));
-        return std::make_tuple("f_rest", 15, offset);
+        return std::make_tuple("f_rest", 1, offset);
     }
     if (name.rfind("scale_", 0) == 0) {
         int offset = std::stoi(name.substr(6));
@@ -201,6 +201,7 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     // No element with name "vertex".
     if (!element) {
         utility::LogWarning("Read PLY failed: no vertex attribute.");
+        ply_close(ply_file);
         return false;
     }
 
@@ -210,6 +211,7 @@ bool ReadPointCloudFromPLY(const std::string &filename,
             {"f_dc", false},      {"f_rest", false},
     };
 
+    int f_rest_count = 0;
     p_ply_property attribute = ply_get_next_property(element, nullptr);
 
     while (attribute) {
@@ -248,6 +250,7 @@ bool ReadPointCloudFromPLY(const std::string &filename,
 
             if (target == "f_rest") {
                 stride = 1;
+                f_rest_count++;
             }
 
             attr_state->name_ = target;
@@ -278,6 +281,20 @@ bool ReadPointCloudFromPLY(const std::string &filename,
         attribute = ply_get_next_property(element, attribute);
     }
 
+    if (f_rest_count > 0) {
+        core::Tensor new_f_rest =
+                core::Tensor::Empty({element_size, f_rest_count}, core::Float32,
+                                    pointcloud.GetDevice());
+        pointcloud.SetPointAttr("f_rest", new_f_rest);
+        for (auto &attr_state : state.id_to_attr_state_) {
+            if (attr_state->name_ == "f_rest") {
+                attr_state->data_ptr_ =
+                        pointcloud.GetPointAttr("f_rest").GetDataPtr();
+                attr_state->stride_ = 1;
+            }
+        }
+    }
+
     utility::CountingProgressReporter reporter(params.update_progress);
     reporter.SetTotal(element_size);
     state.progress_bar_ = &reporter;
@@ -297,16 +314,22 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     }
     if (pointcloud.HasPointAttr("f_rest")) {
         core::Tensor f_rest_tensor = pointcloud.GetPointAttr("f_rest");
-        auto shape = f_rest_tensor.GetShape();  // shape: {N, M}
-        // We expect that M is divisible by 3 so that we can reshape into (N, Nc, 3)
-        if (shape[1] % 3 == 0) {
-            int Nc = shape[1] / 3;
-            pointcloud.SetPointAttr("f_rest", f_rest_tensor.Reshape({shape[0], Nc, 3}));
+        auto shape = f_rest_tensor.GetShape();  // shape = {N, f_rest_count}
+        utility::LogInfo("f_rest tensor shape before: {}", shape.ToString());
+        int num_f_rest_channels = shape[1];
+        utility::LogInfo("Computed num_f_rest_channels: {}",
+                         num_f_rest_channels);
+        if (num_f_rest_channels % 3 == 0) {
+            int Nc = num_f_rest_channels / 3;
+            pointcloud.SetPointAttr(
+                    "f_rest", f_rest_tensor.Reshape({shape[0], Nc, 3}).Clone());
         } else {
-            utility::LogWarning("f_rest attribute has {} columns, which is not divisible by 3.", shape[1]);
+            utility::LogWarning(
+                    "f_rest attribute has {} columns, which is not divisible "
+                    "by 3.",
+                    num_f_rest_channels);
         }
     }
-
     return true;
 }
 
