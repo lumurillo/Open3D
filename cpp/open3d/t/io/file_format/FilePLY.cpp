@@ -494,11 +494,15 @@ bool WritePointCloudToPLY(const std::string &filename,
             it.first == "normals")
             continue;
         auto shape = it.second.GetShape();
-        int group_size = (shape.size() >= 2 ? shape[1] : 1);
+        int group_size = 1;
+        if (shape.size() == 2) {
+            group_size = shape[1];
+        } else if (shape.size() >= 3) {
+            group_size = shape[1] * shape[2];
+        }
         if (group_size == 1) {
             attribute_ptrs.emplace_back(it.second.GetDtype(),
                                         it.second.GetDataPtr(), 1);
-
             attributeType = GetPlyType(it.second.GetDtype());
             ply_add_property(ply_file, it.first.c_str(), attributeType,
                              attributeType, attributeType);
