@@ -45,9 +45,9 @@ inline double sigmoid(double x) {
 unsigned char int_to_byte(const int val) {
     unsigned char byte_val = 0;
 
-    if (val > std::numeric_limits<unsigned char>::min() && 
+    if (val > std::numeric_limits<unsigned char>::min() &&
         val < std::numeric_limits<unsigned char>::max()) {
-        byte_val = static_cast<unsigned char>(val); 
+        byte_val = static_cast<unsigned char>(val);
     }
 
     return byte_val;
@@ -138,6 +138,117 @@ bool ValidSPLATData(const geometry::PointCloud &pointcloud,
     return true;
 }
 
+bool ReadPointCloudFromSPLAT(const std::string &filename,
+                           geometry::PointCloud &pointcloud,
+                           const open3d::io::ReadPointCloudOption &params) {
+    try {
+
+        //Open the file
+        utility::filesystem::CFile file;
+        if (!file.Open(filename, "r")) {
+            utility::LogWarning("Read SPLAT failed: unable to open file: {}", filename);
+            return false;
+        }
+        pointcloud.Clear();
+
+        // Report progress
+        utility::CountingProgressReporter reporter(params.update_progress);
+        reporter.SetTotal(file.GetFileSize());
+
+        //Constants
+        constexpr size_t data_size = 32;
+        char buffer[data_size];
+        int numberOfPoints = 0;
+
+        // Vectors to store the data
+        std::vector<float> positionVector;
+        std::vector<float> scaleVector;
+        std::vector<float> rotationVector;
+        std::vector<float> opacityVector;
+        std::vector<float> f_dcVector;
+        std::vector<float> f_restVector;
+
+        // Read the data
+        while (file.ReadData(buffer, data_size)) {
+            float positions[3];
+            float scale[3];
+            uint8_t color[4];
+            uint8_t rotation[4];
+
+            // Copy the data into the vectors
+            std::memcpy(positions, buffer, 3 * sizeof(float));
+            std::memcpy(scale, buffer + 3 * sizeof(float), 3 * sizeof(float));
+            std::memcpy(color, buffer + 6 * sizeof(float), 4 * sizeof(uint8_t));
+            std::memcpy(rotation, buffer + (6 * sizeof(float)) + (4 * sizeof(uint8_t)), 4 * sizeof(uint8_t));
+
+            // Calculate the f_dc and f_rest
+            float f_dc[3];
+            float f_rest[3];
+            for (int i = 0; i < 3; i++) {
+                f_dc[i] = ((color[i] / 255.0f) - 0.5) / SH_C0;
+                f_rest[i] = SH_C0;
+            }
+
+            // Calculate the opacity
+            float opacity[1];
+            if (color[3] == 0) {
+                opacity[0] = 0.0f; // Handle division by zero
+            } else {
+                opacity[0] = -log(1 / (color[3] / 255.0f) - 1);
+            }
+            float rot_float[4];
+            for (int i = 0; i < 4; i++) {
+                rot_float[i] = (rotation[i] / 128.0f) - 1.0f;
+            }
+
+            // Add the data to the vectors
+            positionVector.insert(positionVector.end(), positions, positions + 3);
+            scaleVector.insert(scaleVector.end(), scale, scale + 3);
+            rotationVector.insert(rotationVector.end(), rot_float, rot_float + 4);
+            opacityVector.insert(opacityVector.end(), opacity, opacity + 1);
+            f_dcVector.insert(f_dcVector.end(), f_dc, f_dc + 3);
+            f_restVector.insert(f_restVector.end(), f_rest, f_rest + 3);
+
+            reporter.Update(file.CurPos());
+            numberOfPoints++;
+        }
+
+        core::Dtype dtype = core::Float32;
+        core::SizeVector shape = {static_cast<int64_t>(positionVector.size())};
+        auto positionBuffer = core::Tensor(positionVector,shape,dtype);
+
+        shape = {static_cast<int64_t>(scaleVector.size())};
+        auto scaleBuffer = core::Tensor(scaleVector,shape,dtype);
+
+        shape = {static_cast<int64_t>(rotationVector.size())};
+        auto rotationBuffer = core::Tensor(rotationVector,shape,dtype);
+
+        shape = {static_cast<int64_t>(opacityVector.size())};
+        auto opacityBuffer = core::Tensor(opacityVector,shape,dtype);
+
+        shape = {static_cast<int64_t>(f_dcVector.size())};
+        auto f_dcBuffer = core::Tensor(f_dcVector,shape,dtype);
+
+        shape = {static_cast<int64_t>(f_restVector.size())};
+        auto f_restBuffer = core::Tensor(f_restVector,shape,dtype);
+
+        // Set the attributes
+        pointcloud.SetPointAttr("positions", positionBuffer);
+        pointcloud.SetPointAttr("scale", scaleBuffer);
+        pointcloud.SetPointAttr("rot", rotationBuffer);
+        pointcloud.SetPointAttr("opacity", opacityBuffer);
+        pointcloud.SetPointAttr("f_dc", f_dcBuffer);
+        pointcloud.SetPointAttr("f_rest", f_restBuffer);
+
+        // Report progress
+        reporter.Finish();
+        return true;
+    } catch (const std::exception& e) {
+        utility::LogWarning("Read SPLAT failed: {}", e.what());
+    }
+    return false;
+}
+
 bool WritePointCloudToSPLAT(const std::string &filename,
                             const geometry::PointCloud &pointcloud,
                             const open3d::io::WritePointCloudOption &params) {
@@ -165,7 +276,7 @@ bool WritePointCloudToSPLAT(const std::string &filename,
 
     AttributePtr f_dc_attr = AttributePtr(t_map["f_dc"].GetDtype(),
                                  t_map["f_dc"].GetDataPtr(), 3);
-    
+
     AttributePtr opacity_attr = AttributePtr(t_map["opacity"].GetDtype(),
                                              t_map["opacity"].GetDataPtr(), 1);
 
@@ -175,7 +286,7 @@ bool WritePointCloudToSPLAT(const std::string &filename,
 
     // Open splat file
     splat_file = fopen(filename.c_str(), "wb");
-    if (!splat_file) {  
+    if (!splat_file) {
         utility::LogWarning("Write SPLAT failed: unable to open file: {}.",
                             filename);
         return false;
@@ -186,7 +297,7 @@ bool WritePointCloudToSPLAT(const std::string &filename,
     reporter.SetTotal(num_gaussians);
 
     for (int64_t i = 0; i < num_gaussians; i++) {
-        
+
         // Positions
         DISPATCH_DTYPE_TO_TEMPLATE(positions_attr.dtype_, [&]() {
             const scalar_t *positions_ptr =
@@ -217,7 +328,7 @@ bool WritePointCloudToSPLAT(const std::string &filename,
                     static_cast<const scalar_t *>(opacity_attr.data_ptr_);
             Eigen::Vector4i color = ComputeColor(f_dc_ptr + f_dc_offset,
                                                  opacity_ptr + opacity_offset);
-            
+
             for (int idx = 0; idx < 4; ++idx) {
                 splat_write_byte(splat_file, int_to_byte(color[idx]));
             }
