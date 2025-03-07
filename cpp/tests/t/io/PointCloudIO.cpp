@@ -215,7 +215,7 @@ TEST(TPointCloudIO, ReadPointCloudFromPLY3) {
 }
 
 // Reading ascii and check for 3DGS attributes.
-TEST(TPointCloudIO, 4) {
+TEST(TPointCloudIO, ReadPointCloudFromPLY4) {
     std::string filename_out = utility::filesystem::GetTempDirectoryPath() +
                                "/test_sample_right_3dgs_format.ply";
     std::ofstream outfile;

@@ -18,6 +18,29 @@
 #include "open3d/utility/Logging.h"
 #include "open3d/utility/ProgressReporters.h"
 
+#define POSITIONS_ATTR_NAME "positions"
+#define NORMALS_ATTR_NAME "normals"
+#define COLORS_ATTR_NAME "colors"
+#define OPACITY_ATTR_NAME "opacity"  // The opacity
+#define ROTATION_ATTR_NAME "rot"     // The Gaussian rotation as a quaternion.
+#define SCALE_ATTR_NAME "scale"      // The Gaussian scale.
+#define F_DC_ATTR_NAME "f_dc"        // DC color components.
+#define F_REST_ATTR_NAME "f_rest"    // Spherical Harmonics Coefficients (SHC).
+
+#define POSITIONS_ATTR_MAX_DIM 3
+#define NORMALS_ATTR_MAX_DIM 3
+#define COLORS_ATTR_MAX_DIM 3
+#define OPACITY_ATTR_MAX_DIM 1   // Scalar opacity.
+#define ROTATION_ATTR_MAX_DIM 4  // Rotation channels.
+#define SCALE_ATTR_MAX_DIM 3     // Channels for x,y,z.
+#define F_DC_ATTR_MAX_DIM 3      // Channels for R,G,B.
+#define F_REST_ATTR_MAX_DIM 1  // Non-DC color. Each property read as a scalar.
+
+#define ROTATION_SUFFIX_INDEX 4
+#define SCALE_SUFFIX_INDEX 6
+#define F_DC_SUFFIX_INDEX 5
+#define F_REST_SUFFIX_INDEX 7
+
 namespace open3d {
 namespace t {
 namespace io {
@@ -126,60 +149,62 @@ static core::Dtype GetDtype(e_ply_type type) {
 static std::tuple<std::string, int, int> GetNameStrideOffsetForAttribute(
         const std::string &name) {
     // Positions attribute.
-    if (name == "x") return std::make_tuple("positions", 3, 0);
-    if (name == "y") return std::make_tuple("positions", 3, 1);
-    if (name == "z") return std::make_tuple("positions", 3, 2);
+    if (name == "x")
+        return std::make_tuple(POSITIONS_ATTR_NAME, POSITIONS_ATTR_MAX_DIM, 0);
+    if (name == "y")
+        return std::make_tuple(POSITIONS_ATTR_NAME, POSITIONS_ATTR_MAX_DIM, 1);
+    if (name == "z")
+        return std::make_tuple(POSITIONS_ATTR_NAME, POSITIONS_ATTR_MAX_DIM, 2);
 
     // Normals attribute.
-    if (name == "nx") return std::make_tuple("normals", 3, 0);
-    if (name == "ny") return std::make_tuple("normals", 3, 1);
-    if (name == "nz") return std::make_tuple("normals", 3, 2);
+    if (name == "nx")
+        return std::make_tuple(NORMALS_ATTR_NAME, NORMALS_ATTR_MAX_DIM, 0);
+    if (name == "ny")
+        return std::make_tuple(NORMALS_ATTR_NAME, NORMALS_ATTR_MAX_DIM, 1);
+    if (name == "nz")
+        return std::make_tuple(NORMALS_ATTR_NAME, NORMALS_ATTR_MAX_DIM, 2);
 
     // Colors attribute.
-    if (name == "red") return std::make_tuple("colors", 3, 0);
-    if (name == "green") return std::make_tuple("colors", 3, 1);
-    if (name == "blue") return std::make_tuple("colors", 3, 2);
+    if (name == "red")
+        return std::make_tuple(COLORS_ATTR_NAME, COLORS_ATTR_MAX_DIM, 0);
+    if (name == "green")
+        return std::make_tuple(COLORS_ATTR_NAME, COLORS_ATTR_MAX_DIM, 1);
+    if (name == "blue")
+        return std::make_tuple(COLORS_ATTR_NAME, COLORS_ATTR_MAX_DIM, 2);
 
     // Extra attributes for 3DGS.
-    // All property names with the following prefixes are mapped to grouped
-    // attributes.
-    // The channel index is extracted from the suffix of the property name.
+    // Property names with prefixes are mapped to grouped attributes.
 
-    // - "f_dc_" properties represent the DC color components (3 channels for
-    // RGB).
-    if (name.rfind("f_dc_", 0) == 0) {
-        // "f_dc_" is 5 characters long.
-        int offset = std::stoi(name.substr(5));
-        return std::make_tuple("f_dc", 3, offset);
+    // f_dc attribute.
+    if (name.rfind(std::string(F_DC_ATTR_NAME) + "_", 0) == 0) {
+        int offset = std::stoi(name.substr(F_DC_SUFFIX_INDEX));
+        return std::make_tuple(F_DC_ATTR_NAME, F_DC_ATTR_MAX_DIM, offset);
     }
-    // - "f_rest_" properties represent the spherical harmonics coefficients
-    // (non-DC color data); each property is read as a scalar.
-    if (name.rfind("f_rest_", 0) == 0) {
-        int offset = std::stoi(name.substr(7));
-        // Each f_rest property is read as a scalar.
-        return std::make_tuple("f_rest", 1, offset);
+    // f_rest attribute.
+    if (name.rfind(std::string(F_REST_ATTR_NAME) + "_", 0) == 0) {
+        int offset = std::stoi(name.substr(F_REST_SUFFIX_INDEX));
+        return std::make_tuple(F_REST_ATTR_NAME, F_REST_ATTR_MAX_DIM, offset);
     }
-    // - "scale_" properties represent the Gaussian scales (3 channels for x, y,
-    // z).
-    if (name.rfind("scale_", 0) == 0) {
-        int offset = std::stoi(name.substr(6));
-        return std::make_tuple("scale", 3, offset);
+    // scale attribute.
+    if (name.rfind(std::string(SCALE_ATTR_NAME) + "_", 0) == 0) {
+        int offset = std::stoi(name.substr(SCALE_SUFFIX_INDEX));
+        return std::make_tuple(SCALE_ATTR_NAME, SCALE_ATTR_MAX_DIM, offset);
     }
-    // - "rot_" properties represent the Gaussian rotation as a quaternion (4
-    // channels).
-    if (name.rfind("rot_", 0) == 0) {
-        int offset = std::stoi(name.substr(4));
-        return std::make_tuple("rot", 4, offset);
+    // rot attribute.
+    if (name.rfind(std::string(ROTATION_ATTR_NAME) + "_", 0) == 0) {
+        int offset = std::stoi(name.substr(ROTATION_SUFFIX_INDEX));
+        return std::make_tuple(ROTATION_ATTR_NAME, ROTATION_ATTR_MAX_DIM,
+                               offset);
     }
     // Other attribute.
     return std::make_tuple(name, 1, 0);
 }
 
 bool Is3DGSPointCloud(const geometry::PointCloud &pointcloud) {
-    return (pointcloud.HasPointAttr("opacity") &&
-            pointcloud.HasPointAttr("rot") &&
-            pointcloud.HasPointAttr("scale") &&
-            pointcloud.HasPointAttr("f_dc"));
+    return (pointcloud.HasPointAttr(OPACITY_ATTR_NAME) &&
+            pointcloud.HasPointAttr(ROTATION_ATTR_NAME) &&
+            pointcloud.HasPointAttr(SCALE_ATTR_NAME) &&
+            pointcloud.HasPointAttr(F_DC_ATTR_NAME));
 }
 
 bool ReadPointCloudFromPLY(const std::string &filename,
@@ -220,9 +245,10 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     }
 
     std::unordered_map<std::string, bool> primary_attr_init = {
-            {"positions", false}, {"normals", false}, {"colors", false},
-            {"opacity", false},   {"rot", false},     {"scale", false},
-            {"f_dc", false},      {"f_rest", false},
+            {POSITIONS_ATTR_NAME, false}, {NORMALS_ATTR_NAME, false},
+            {COLORS_ATTR_NAME, false},    {OPACITY_ATTR_NAME, false},
+            {ROTATION_ATTR_NAME, false},  {SCALE_ATTR_NAME, false},
+            {F_DC_ATTR_NAME, false},      {F_REST_ATTR_NAME, false},
     };
 
     int f_rest_count = 0;
@@ -262,7 +288,7 @@ bool ReadPointCloudFromPLY(const std::string &filename,
             std::tie(target, stride, offset) =
                     GetNameStrideOffsetForAttribute(attr_name);
 
-            if (target == "f_rest") {
+            if (target == F_REST_ATTR_NAME) {
                 stride = 1;
                 f_rest_count++;
             }
@@ -299,11 +325,11 @@ bool ReadPointCloudFromPLY(const std::string &filename,
         core::Tensor new_f_rest =
                 core::Tensor::Empty({element_size, f_rest_count}, core::Float32,
                                     pointcloud.GetDevice());
-        pointcloud.SetPointAttr("f_rest", new_f_rest);
+        pointcloud.SetPointAttr(F_REST_ATTR_NAME, new_f_rest);
         for (auto &attr_state : state.id_to_attr_state_) {
-            if (attr_state->name_ == "f_rest") {
+            if (attr_state->name_ == F_REST_ATTR_NAME) {
                 attr_state->data_ptr_ =
-                        pointcloud.GetPointAttr("f_rest").GetDataPtr();
+                        pointcloud.GetPointAttr(F_REST_ATTR_NAME).GetDataPtr();
                 attr_state->stride_ = 1;
             }
         }
@@ -326,8 +352,8 @@ bool ReadPointCloudFromPLY(const std::string &filename,
     if (Is3DGSPointCloud(pointcloud)) {
         utility::LogInfo("PLY file identified as 3DGS format.");
     }
-    if (pointcloud.HasPointAttr("f_rest")) {
-        core::Tensor f_rest_tensor = pointcloud.GetPointAttr("f_rest");
+    if (pointcloud.HasPointAttr(F_REST_ATTR_NAME)) {
+        core::Tensor f_rest_tensor = pointcloud.GetPointAttr(F_REST_ATTR_NAME);
         auto shape = f_rest_tensor.GetShape();  // shape = {N, f_rest_count}
         utility::LogInfo("f_rest tensor shape before: {}", shape.ToString());
         int num_f_rest_channels = shape[1];
@@ -336,7 +362,8 @@ bool ReadPointCloudFromPLY(const std::string &filename,
         if (num_f_rest_channels % 3 == 0) {
             int Nc = num_f_rest_channels / 3;
             pointcloud.SetPointAttr(
-                    "f_rest", f_rest_tensor.Reshape({shape[0], Nc, 3}).Clone());
+                    F_REST_ATTR_NAME,
+                    f_rest_tensor.Reshape({shape[0], Nc, 3}).Clone());
         } else {
             utility::LogWarning(
                     "f_rest attribute has {} columns, which is not divisible "
@@ -393,18 +420,20 @@ bool Validate3DGSPointCloudProperties(const geometry::PointCloud &pointcloud) {
     int64_t num_points = pointcloud.GetPointPositions().GetLength();
 
     // Assert attribute shapes.
-    bool valid_positions = CheckMandatory3DGSProperty(pointcloud, "positions",
-                                                      {num_points, 3});
-    bool valid_normals =
-            CheckMandatory3DGSProperty(pointcloud, "normals", {num_points, 3});
-    bool valid_opacity =
-            CheckMandatory3DGSProperty(pointcloud, "opacity", {num_points, 1});
+    bool valid_positions =
+            CheckMandatory3DGSProperty(pointcloud, POSITIONS_ATTR_NAME,
+                                       {num_points, POSITIONS_ATTR_MAX_DIM});
+    bool valid_normals = CheckMandatory3DGSProperty(
+            pointcloud, NORMALS_ATTR_NAME, {num_points, NORMALS_ATTR_MAX_DIM});
+    bool valid_opacity = CheckMandatory3DGSProperty(
+            pointcloud, OPACITY_ATTR_NAME, {num_points, OPACITY_ATTR_MAX_DIM});
     bool valid_rot =
-            CheckMandatory3DGSProperty(pointcloud, "rot", {num_points, 4});
-    bool valid_scale =
-            CheckMandatory3DGSProperty(pointcloud, "scale", {num_points, 3});
-    bool valid_f_dc =
-            CheckMandatory3DGSProperty(pointcloud, "f_dc", {num_points, 3});
+            CheckMandatory3DGSProperty(pointcloud, ROTATION_ATTR_NAME,
+                                       {num_points, ROTATION_ATTR_MAX_DIM});
+    bool valid_scale = CheckMandatory3DGSProperty(
+            pointcloud, SCALE_ATTR_NAME, {num_points, SCALE_ATTR_MAX_DIM});
+    bool valid_f_dc = CheckMandatory3DGSProperty(
+            pointcloud, F_DC_ATTR_NAME, {num_points, F_DC_ATTR_MAX_DIM});
 
     return (valid_positions && valid_normals && valid_opacity && valid_rot &&
             valid_scale && valid_f_dc);
@@ -431,8 +460,8 @@ bool WritePointCloudToPLY(const std::string &filename,
     // Verify that standard attributes have length equal to num_points.
     // Extra attributes must have at least 2 dimensions: (num_points, channels).
     for (auto const &it : t_map) {
-        if (it.first == "positions" || it.first == "normals" ||
-            it.first == "colors") {
+        if (it.first == POSITIONS_ATTR_NAME || it.first == NORMALS_ATTR_NAME ||
+            it.first == COLORS_ATTR_NAME) {
             if (it.second.GetLength() != num_points) {
                 utility::LogWarning(
                         "Write PLY failed: Points ({}) and {} ({}) have "
@@ -473,19 +502,22 @@ bool WritePointCloudToPLY(const std::string &filename,
     ply_add_element(ply_file, "vertex", num_points);
 
     std::vector<AttributePtr> attribute_ptrs;
-    attribute_ptrs.emplace_back(t_map["positions"].GetDtype(),
-                                t_map["positions"].GetDataPtr(), 3);
+    attribute_ptrs.emplace_back(t_map[POSITIONS_ATTR_NAME].GetDtype(),
+                                t_map[POSITIONS_ATTR_NAME].GetDataPtr(),
+                                POSITIONS_ATTR_MAX_DIM);
 
-    e_ply_type pointType = GetPlyType(t_map["positions"].GetDtype());
+    e_ply_type pointType = GetPlyType(t_map[POSITIONS_ATTR_NAME].GetDtype());
     ply_add_property(ply_file, "x", pointType, pointType, pointType);
     ply_add_property(ply_file, "y", pointType, pointType, pointType);
     ply_add_property(ply_file, "z", pointType, pointType, pointType);
 
     if (pointcloud.HasPointNormals()) {
-        attribute_ptrs.emplace_back(t_map["normals"].GetDtype(),
-                                    t_map["normals"].GetDataPtr(), 3);
+        attribute_ptrs.emplace_back(t_map[NORMALS_ATTR_NAME].GetDtype(),
+                                    t_map[NORMALS_ATTR_NAME].GetDataPtr(),
+                                    NORMALS_ATTR_MAX_DIM);
 
-        e_ply_type pointNormalsType = GetPlyType(t_map["normals"].GetDtype());
+        e_ply_type pointNormalsType =
+                GetPlyType(t_map[NORMALS_ATTR_NAME].GetDtype());
         ply_add_property(ply_file, "nx", pointNormalsType, pointNormalsType,
                          pointNormalsType);
         ply_add_property(ply_file, "ny", pointNormalsType, pointNormalsType,
@@ -495,10 +527,12 @@ bool WritePointCloudToPLY(const std::string &filename,
     }
 
     if (pointcloud.HasPointColors()) {
-        attribute_ptrs.emplace_back(t_map["colors"].GetDtype(),
-                                    t_map["colors"].GetDataPtr(), 3);
+        attribute_ptrs.emplace_back(t_map[COLORS_ATTR_NAME].GetDtype(),
+                                    t_map[COLORS_ATTR_NAME].GetDataPtr(),
+                                    COLORS_ATTR_MAX_DIM);
 
-        e_ply_type pointColorType = GetPlyType(t_map["colors"].GetDtype());
+        e_ply_type pointColorType =
+                GetPlyType(t_map[COLORS_ATTR_NAME].GetDtype());
         ply_add_property(ply_file, "red", pointColorType, pointColorType,
                          pointColorType);
         ply_add_property(ply_file, "green", pointColorType, pointColorType,
@@ -514,8 +548,8 @@ bool WritePointCloudToPLY(const std::string &filename,
     // property (e.g., "f_rest_0", "f_rest_1", ...).
     e_ply_type attributeType;
     for (auto const &it : t_map) {
-        if (it.first == "positions" || it.first == "colors" ||
-            it.first == "normals")
+        if (it.first == POSITIONS_ATTR_NAME || it.first == COLORS_ATTR_NAME ||
+            it.first == NORMALS_ATTR_NAME)
             continue;
         auto shape = it.second.GetShape();
         int group_size = 1;
