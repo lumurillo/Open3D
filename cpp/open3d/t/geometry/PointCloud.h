@@ -242,7 +242,7 @@ public:
     /// This is a convenience function.
     bool HasPointFDCs() const { return HasPointAttr("f_dc"); }
 
-        /// Returns true if all of the following are true:
+    /// Returns true if all of the following are true:
     /// 1) attribute "f_rest" exist
     /// 2) attribute "f_rest"'s length as points' length
     /// 3) attribute "f_rest"'s length > 0
