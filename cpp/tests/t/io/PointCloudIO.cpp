@@ -216,49 +216,53 @@ TEST(TPointCloudIO, ReadPointCloudFromPLY3) {
 
 // Reading ascii and check for 3DGS attributes.
 TEST(TPointCloudIO, 4) {
-        std::string filename_out = utility::filesystem::GetTempDirectoryPath() +
-                                   "/test_sample_right_3dgs_format.ply";
-        std::ofstream outfile;
-        outfile.open(filename_out);
-        char data[1000] =
-                "ply \n"
-                "format binary_little_endian 1.0 \n"
-                "element vertex 2 \n"
-                "property float x \n"
-                "property float y \n"
-                "property float z \n"
-                "property float nx \n"
-                "property float ny \n"
-                "property float nz \n"
-                "property float f_dc_0 \n"
-                "property float f_dc_1 \n"
-                "property float f_dc_2 \n"
-                "property float f_rest_0 \n"
-                "property float f_rest_1 \n"
-                "property float f_rest_2 \n"
-                "property float opacity \n"
-                "property float scale_0 \n"
-                "property float scale_1 \n"
-                "property float scale_2 \n"
-                "property float rot_0 \n"
-                "property float rot_1 \n"
-                "property float rot_2 \n"
-                "property float rot_3 \n"
-                "end_header \n"
-                "0.7236 -0.52572 -0.447215 1.56827 -2.18747 -1.86078 -1.20846 0.45058 -0.98568 -1.56484 1.45875 -2.54894 -1.56895 2.56841 -0.58956 -1.54784 -0.89565 -2.56845 -1.56581 0.25685 \n"
-                "0.6598 -1.42875 -2.857215 -1.78825 2.54852 -0.38478 0.245846 -0.3305 -1.58646 0.564854 -2.8579 -0.44568 1.33395 -1.58847 -2.55896 0.58984 2.13565 1.33845 -2.45685 -1.66585 \n";
-        outfile << data;
-        outfile.close();
+    std::string filename_out = utility::filesystem::GetTempDirectoryPath() +
+                               "/test_sample_right_3dgs_format.ply";
+    std::ofstream outfile;
+    outfile.open(filename_out);
+    char data[1000] =
+            "ply \n"
+            "format binary_little_endian 1.0 \n"
+            "element vertex 2 \n"
+            "property float x \n"
+            "property float y \n"
+            "property float z \n"
+            "property float nx \n"
+            "property float ny \n"
+            "property float nz \n"
+            "property float f_dc_0 \n"
+            "property float f_dc_1 \n"
+            "property float f_dc_2 \n"
+            "property float f_rest_0 \n"
+            "property float f_rest_1 \n"
+            "property float f_rest_2 \n"
+            "property float opacity \n"
+            "property float scale_0 \n"
+            "property float scale_1 \n"
+            "property float scale_2 \n"
+            "property float rot_0 \n"
+            "property float rot_1 \n"
+            "property float rot_2 \n"
+            "property float rot_3 \n"
+            "end_header \n"
+            "0.7236 -0.52572 -0.447215 1.56827 -2.18747 -1.86078 -1.20846 "
+            "0.45058 -0.98568 -1.56484 1.45875 -2.54894 -1.56895 2.56841 "
+            "-0.58956 -1.54784 -0.89565 -2.56845 -1.56581 0.25685 \n"
+            "0.6598 -1.42875 -2.857215 -1.78825 2.54852 -0.38478 0.245846 "
+            "-0.3305 -1.58646 0.564854 -2.8579 -0.44568 1.33395 -1.58847 "
+            "-2.55896 0.58984 2.13565 1.33845 -2.45685 -1.66585 \n";
+    outfile << data;
+    outfile.close();
 
-        t::geometry::PointCloud pcd;
-        t::io::ReadPointCloud(filename_out, pcd, {"auto", false, false, true});
-        EXPECT_TRUE(pcd.HasPointAttr("positions"));
-        EXPECT_TRUE(pcd.HasPointAttr("opacity"));
-        EXPECT_TRUE(pcd.HasPointAttr("rot"));
-        EXPECT_TRUE(pcd.HasPointAttr("scale"));
-        EXPECT_TRUE(pcd.HasPointAttr("f_dc"));
-        EXPECT_TRUE(pcd.HasPointAttr("f_rest"));
-    }
+    t::geometry::PointCloud pcd;
+    t::io::ReadPointCloud(filename_out, pcd, {"auto", false, false, true});
+    EXPECT_TRUE(pcd.HasPointAttr("positions"));
+    EXPECT_TRUE(pcd.HasPointAttr("opacity"));
+    EXPECT_TRUE(pcd.HasPointAttr("rot"));
+    EXPECT_TRUE(pcd.HasPointAttr("scale"));
+    EXPECT_TRUE(pcd.HasPointAttr("f_dc"));
+    EXPECT_TRUE(pcd.HasPointAttr("f_rest"));
+}
 
 // Read write empty point cloud.
 TEST(TPointCloudIO, ReadWriteEmptyPTS) {

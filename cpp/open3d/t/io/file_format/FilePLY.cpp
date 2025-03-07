@@ -141,18 +141,32 @@ static std::tuple<std::string, int, int> GetNameStrideOffsetForAttribute(
     if (name == "blue") return std::make_tuple("colors", 3, 2);
 
     // Extra attributes for 3DGS.
+    // All property names with the following prefixes are mapped to grouped
+    // attributes.
+    // The channel index is extracted from the suffix of the property name.
+
+    // - "f_dc_" properties represent the DC color components (3 channels for
+    // RGB).
     if (name.rfind("f_dc_", 0) == 0) {
+        // "f_dc_" is 5 characters long.
         int offset = std::stoi(name.substr(5));
         return std::make_tuple("f_dc", 3, offset);
     }
+    // - "f_rest_" properties represent the spherical harmonics coefficients
+    // (non-DC color data); each property is read as a scalar.
     if (name.rfind("f_rest_", 0) == 0) {
         int offset = std::stoi(name.substr(7));
+        // Each f_rest property is read as a scalar.
         return std::make_tuple("f_rest", 1, offset);
     }
+    // - "scale_" properties represent the Gaussian scales (3 channels for x, y,
+    // z).
     if (name.rfind("scale_", 0) == 0) {
         int offset = std::stoi(name.substr(6));
         return std::make_tuple("scale", 3, offset);
     }
+    // - "rot_" properties represent the Gaussian rotation as a quaternion (4
+    // channels).
     if (name.rfind("rot_", 0) == 0) {
         int offset = std::stoi(name.substr(4));
         return std::make_tuple("rot", 4, offset);
@@ -161,7 +175,7 @@ static std::tuple<std::string, int, int> GetNameStrideOffsetForAttribute(
     return std::make_tuple(name, 1, 0);
 }
 
-bool Is3DGSPointCloud(const geometry::PointCloud &pointcloud){
+bool Is3DGSPointCloud(const geometry::PointCloud &pointcloud) {
     return (pointcloud.HasPointAttr("opacity") &&
             pointcloud.HasPointAttr("rot") &&
             pointcloud.HasPointAttr("scale") &&
@@ -364,11 +378,9 @@ struct AttributePtr {
     const int group_size_;
 };
 
-bool CheckMandatory3DGSProperty(
-    const geometry::PointCloud &pointcloud,
-    const std::string &property,
-    const core::SizeVector &dims) {
-
+bool CheckMandatory3DGSProperty(const geometry::PointCloud &pointcloud,
+                                const std::string &property,
+                                const core::SizeVector &dims) {
     if (!pointcloud.HasPointAttr(property)) {
         return false;
     }
@@ -377,25 +389,30 @@ bool CheckMandatory3DGSProperty(
     return true;
 }
 
-bool Validate3DGSPointCloudProperties(const geometry::PointCloud &pointcloud)
-{
+bool Validate3DGSPointCloudProperties(const geometry::PointCloud &pointcloud) {
     int64_t num_points = pointcloud.GetPointPositions().GetLength();
 
     // Assert attribute shapes.
-    bool valid_positions = CheckMandatory3DGSProperty(pointcloud, "positions", {num_points, 3});
-    bool valid_normals = CheckMandatory3DGSProperty(pointcloud, "normals", {num_points, 3});
-    bool valid_opacity = CheckMandatory3DGSProperty(pointcloud, "opacity", {num_points, 1});
-    bool valid_rot = CheckMandatory3DGSProperty(pointcloud, "rot", {num_points, 4});
-    bool valid_scale = CheckMandatory3DGSProperty(pointcloud, "scale", {num_points, 3});
-    bool valid_f_dc = CheckMandatory3DGSProperty(pointcloud, "f_dc", {num_points, 3});
+    bool valid_positions = CheckMandatory3DGSProperty(pointcloud, "positions",
+                                                      {num_points, 3});
+    bool valid_normals =
+            CheckMandatory3DGSProperty(pointcloud, "normals", {num_points, 3});
+    bool valid_opacity =
+            CheckMandatory3DGSProperty(pointcloud, "opacity", {num_points, 1});
+    bool valid_rot =
+            CheckMandatory3DGSProperty(pointcloud, "rot", {num_points, 4});
+    bool valid_scale =
+            CheckMandatory3DGSProperty(pointcloud, "scale", {num_points, 3});
+    bool valid_f_dc =
+            CheckMandatory3DGSProperty(pointcloud, "f_dc", {num_points, 3});
 
-    return (valid_positions && valid_normals && valid_opacity && valid_rot && valid_scale && valid_f_dc);
+    return (valid_positions && valid_normals && valid_opacity && valid_rot &&
+            valid_scale && valid_f_dc);
 }
 
 bool WritePointCloudToPLY(const std::string &filename,
                           const geometry::PointCloud &pointcloud,
                           const open3d::io::WritePointCloudOption &params) {
-
     if (pointcloud.IsEmpty()) {
         utility::LogWarning("Write PLY failed: point cloud has 0 points.");
         return false;
@@ -411,7 +428,8 @@ bool WritePointCloudToPLY(const std::string &filename,
     long num_points =
             static_cast<long>(pointcloud.GetPointPositions().GetLength());
 
-    // Make sure all the attributes have same size.
+    // Verify that standard attributes have length equal to num_points.
+    // Extra attributes must have at least 2 dimensions: (num_points, channels).
     for (auto const &it : t_map) {
         if (it.first == "positions" || it.first == "normals" ||
             it.first == "colors") {
@@ -424,6 +442,7 @@ bool WritePointCloudToPLY(const std::string &filename,
             }
         } else {
             auto shape = it.second.GetShape();
+            // Only tensors with shape (num_points, channels) are supported.
             if (shape.size() < 2 || shape[0] != num_points) {
                 utility::LogWarning(
                         "Write PLY failed. PointCloud contains {} attribute "
@@ -488,6 +507,11 @@ bool WritePointCloudToPLY(const std::string &filename,
                          pointColorType);
     }
 
+    // Process extra attributes.
+    // Extra attributes are expected to be tensors with shape (num_points,
+    // channels) or (num_points, C, D). For multi-channel attributes, the
+    // channels are flattened, and each channel is written as a separate
+    // property (e.g., "f_rest_0", "f_rest_1", ...).
     e_ply_type attributeType;
     for (auto const &it : t_map) {
         if (it.first == "positions" || it.first == "colors" ||
