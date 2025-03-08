@@ -66,7 +66,7 @@ Eigen::Vector4i ComputeColor(const scalar_t *f_dc_ptr,
 }
 
 bool splat_write_byte(FILE *splat_file, unsigned char val) {
-    if (fprintf(splat_file, "%d", val) <= 0) {
+    if (fprintf(splat_file, "%c", val) <= 0) {
         utility::LogWarning("Write SPLAT failed: Error writing to file");
         return false;
     }
@@ -90,53 +90,21 @@ bool splat_write_float(FILE *splat_file, float val) {
 
 bool ValidSPLATData(const geometry::PointCloud &pointcloud,
                     geometry::TensorMap t_map) {
-    // Positions
-    if (t_map["positions"].GetDtype() != core::Float32) {
-        utility::LogWarning(
-                "Write SPLAT failed: "
-                "unsupported data type: {}.",
-                t_map["positions"].GetDtype().ToString());
-        return false;
-    }
+    std::vector<std::string> attributes = {"positions", "scale", "rot", "f_dc",
+                                           "opacity"};
 
-    // Scale
-    if (pointcloud.HasPointScales()) {
-        if (t_map["scale"].GetDtype() != core::Float32) {
+    for (const auto &attr : attributes) {
+        if (!pointcloud.HasPointAttr(attr)) {
             utility::LogWarning(
-                    "Write SPLAT failed: "
-                    "unsupported data type: {}.",
-                    t_map["scale"].GetDtype().ToString());
+                    "Write SPLAT failed: couldn't find valid \"{}\" attribute.",
+                    attr);
+            return false;
+        } else if (t_map[attr].GetDtype() != core::Float32) {
+            utility::LogWarning(
+                    "Write SPLAT failed: unsupported data type: {}.",
+                    t_map[attr].GetDtype().ToString());
             return false;
         }
-    } else {
-        utility::LogWarning(
-                "Write SPLAT failed: "
-                "couldn't find valid \"scale\" attribute.");
-        return false;
-    }
-
-    // Rot
-    if (!pointcloud.HasPointRots()) {
-        utility::LogWarning(
-                "Write SPLAT failed: "
-                "couldn't find valid \"rot\" attribute.");
-        return false;
-    }
-
-    // f_dc
-    if (!pointcloud.HasPointFDCs()) {
-        utility::LogWarning(
-                "Write SPLAT failed: "
-                "couldn't find valid \"f_dc\" attribute.");
-        return false;
-    }
-
-    // Opacity
-    if (!pointcloud.HasPointOpacities()) {
-        utility::LogWarning(
-                "Write SPLAT failed: "
-                "couldn't find valid \"opacity\" attribute.");
-        return false;
     }
 
     return true;
@@ -155,32 +123,72 @@ bool ReadPointCloudFromSPLAT(const std::string &filename,
         }
         pointcloud.Clear();
 
+        size_t file_size = file.GetFileSize();
+        if (file_size % SPLAT_GAUSSIAN_BYTE_SIZE) {
+            utility::LogWarning(
+                    "Read SPLAT failed: file does not contain "
+                    "a whole number of Gaussians. File Size {}"
+                    " bytes, Gaussian Size {} bytes.",
+                    file_size, SPLAT_GAUSSIAN_BYTE_SIZE);
+            return false;
+        }
+
         // Report progress
         utility::CountingProgressReporter reporter(params.update_progress);
         reporter.SetTotal(file.GetFileSize());
 
         // Constants
         char buffer[SPLAT_GAUSSIAN_BYTE_SIZE];
-        int number_of_points = 0;
+        int number_of_points =
+                static_cast<int>(file_size / SPLAT_GAUSSIAN_BYTE_SIZE);
 
-        // Vectors to store the data
-        std::vector<float> position_vector;
-        std::vector<float> scale_vector;
-        std::vector<float> rotation_vector;
-        std::vector<float> opacity_vector;
-        std::vector<float> f_dc_vector;
-        std::vector<float> f_rest_vector;
+        // Positions
+        pointcloud.SetPointPositions(
+                core::Tensor::Empty({number_of_points, 3}, core::Float32));
+        // Scale
+        pointcloud.SetPointAttr(
+                "scale",
+                core::Tensor::Empty({number_of_points, 3}, core::Float32));
+        // Rots
+        pointcloud.SetPointAttr(
+                "rot",
+                core::Tensor::Empty({number_of_points, 4}, core::Float32));
+        // f_dc
+        pointcloud.SetPointAttr(
+                "f_dc",
+                core::Tensor::Empty({number_of_points, 3}, core::Float32));
+        // Opacity
+        pointcloud.SetPointAttr(
+                "opacity",
+                core::Tensor::Empty({number_of_points, 1}, core::Float32));
+        // f_rest
+        pointcloud.SetPointAttr(
+                "f_rest",
+                core::Tensor::Empty({number_of_points, 3}, core::Float32));
+
+        float *position_ptr = static_cast<float *>(
+                pointcloud.GetPointPositions().GetDataPtr());
+        float *scale_ptr = static_cast<float *>(
+                pointcloud.GetPointAttr("scale").GetDataPtr());
+        float *rot_ptr = static_cast<float *>(
+                pointcloud.GetPointAttr("rot").GetDataPtr());
+        float *f_dc_ptr = static_cast<float *>(
+                pointcloud.GetPointAttr("f_dc").GetDataPtr());
+        float *opacity_ptr = static_cast<float *>(
+                pointcloud.GetPointAttr("opacity").GetDataPtr());
+        float *f_rest_ptr = static_cast<float *>(
+                pointcloud.GetPointAttr("f_rest").GetDataPtr());
 
         // Read the data
+        int index = 0;
         while (file.ReadData(buffer, SPLAT_GAUSSIAN_BYTE_SIZE)) {
-            float positions[3];
-            float scale[3];
             uint8_t color[4];
             uint8_t rotation[4];
 
             // Copy the data into the vectors
-            std::memcpy(positions, buffer, 3 * sizeof(float));
-            std::memcpy(scale, buffer + 3 * sizeof(float), 3 * sizeof(float));
+            std::memcpy(position_ptr + index * 3, buffer, 3 * sizeof(float));
+            std::memcpy(scale_ptr + index * 3, buffer + 3 * sizeof(float),
+                        3 * sizeof(float));
             std::memcpy(color, buffer + 6 * sizeof(float), 4 * sizeof(uint8_t));
             std::memcpy(rotation,
                         buffer + (6 * sizeof(float)) + (4 * sizeof(uint8_t)),
@@ -193,6 +201,8 @@ bool ReadPointCloudFromSPLAT(const std::string &filename,
                 f_dc[i] = ((color[i] / 255.0f) - 0.5) / SH_C0;
                 f_rest[i] = SH_C0;
             }
+            std::memcpy(f_dc_ptr + index * 3, f_dc, 3 * sizeof(float));
+            std::memcpy(f_rest_ptr + index * 3, f_rest, 3 * sizeof(float));
 
             // Calculate the opacity
             float opacity[1];
@@ -201,54 +211,19 @@ bool ReadPointCloudFromSPLAT(const std::string &filename,
             } else {
                 opacity[0] = -log(1 / (color[3] / 255.0f) - 1);
             }
+            std::memcpy(opacity_ptr + index, opacity, sizeof(float));
+
             float rot_float[4];
             for (int i = 0; i < 4; i++) {
                 rot_float[i] = (rotation[i] / 128.0f) - 1.0f;
             }
+            std::memcpy(rot_ptr + index * 4, rot_float, 4 * sizeof(float));
 
-            // Add the data to the vectors
-            position_vector.insert(position_vector.end(), positions,
-                                   positions + 3);
-            scale_vector.insert(scale_vector.end(), scale, scale + 3);
-            rotation_vector.insert(rotation_vector.end(), rot_float,
-                                   rot_float + 4);
-            opacity_vector.insert(opacity_vector.end(), opacity, opacity + 1);
-            f_dc_vector.insert(f_dc_vector.end(), f_dc, f_dc + 3);
-            f_rest_vector.insert(f_rest_vector.end(), f_rest, f_rest + 3);
-
-            number_of_points++;
-            if (number_of_points % 1000 == 0) {
+            index++;
+            if (index % 1000 == 0) {
                 reporter.Update(file.CurPos());
             }
         }
-
-        // Initialize the tensor
-        core::Dtype dtype = core::Float32;
-        core::SizeVector shape = {static_cast<int64_t>(position_vector.size())};
-        auto position_buffer = core::Tensor(position_vector, shape, dtype);
-
-        shape = {static_cast<int64_t>(scale_vector.size())};
-        auto scale_buffer = core::Tensor(scale_vector, shape, dtype);
-
-        shape = {static_cast<int64_t>(rotation_vector.size())};
-        auto rotation_buffer = core::Tensor(rotation_vector, shape, dtype);
-
-        shape = {static_cast<int64_t>(opacity_vector.size())};
-        auto opacity_buffer = core::Tensor(opacity_vector, shape, dtype);
-
-        shape = {static_cast<int64_t>(f_dc_vector.size())};
-        auto f_dc_buffer = core::Tensor(f_dc_vector, shape, dtype);
-
-        shape = {static_cast<int64_t>(f_rest_vector.size())};
-        auto f_rest_buffer = core::Tensor(f_rest_vector, shape, dtype);
-
-        // Set the attributes
-        pointcloud.SetPointAttr("positions", position_buffer);
-        pointcloud.SetPointAttr("scale", scale_buffer);
-        pointcloud.SetPointAttr("rot", rotation_buffer);
-        pointcloud.SetPointAttr("opacity", opacity_buffer);
-        pointcloud.SetPointAttr("f_dc", f_dc_buffer);
-        pointcloud.SetPointAttr("f_rest", f_rest_buffer);
 
         // Report progress
         reporter.Finish();
