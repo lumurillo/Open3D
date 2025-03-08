@@ -11,7 +11,6 @@
 
 #include <fstream>
 #include <iostream>
-#include <random>
 
 #include "core/CoreTest.h"
 #include "open3d/core/Device.h"
