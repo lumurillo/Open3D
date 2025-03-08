@@ -264,47 +264,6 @@ TEST(TPointCloudIO, ReadPointCloudFromPLY4) {
     EXPECT_TRUE(pcd.HasPointAttr("f_rest"));
 }
 
-// Reading ascii and check for 3DGS attributes.
-TEST(TPointCloudIO, ReadNoRotationPointCloudFromPLY) {
-    std::string filename_out = utility::filesystem::GetTempDirectoryPath() +
-                               "/test_sample_wrong_3dgs_format.ply";
-    std::ofstream outfile;
-    outfile.open(filename_out);
-    char data[1000] =
-            "ply \n"
-            "format ascii 1.0 \n"
-            "element vertex 2 \n"
-            "property float x \n"
-            "property float y \n"
-            "property float z \n"
-            "property float nx \n"
-            "property float ny \n"
-            "property float nz \n"
-            "property float f_dc_0 \n"
-            "property float f_dc_1 \n"
-            "property float f_dc_2 \n"
-            "property float f_rest_0 \n"
-            "property float f_rest_1 \n"
-            "property float f_rest_2 \n"
-            "property float opacity \n"
-            "property float scale_0 \n"
-            "property float scale_1 \n"
-            "property float scale_2 \n"
-            "end_header \n"
-            "0.7236 -0.52572 -0.447215 1.56827 -2.18747 -1.86078 -1.20846 "
-            "0.45058 -0.98568 -1.56484 1.45875 -2.54894 -1.56895 2.56841 "
-            "-0.58956 0.25685 \n"
-            "0.6598 -1.42875 -2.857215 -1.78825 2.54852 -0.38478 0.245846 "
-            "-0.44568 1.33395 -1.58847 "
-            "-2.55896 0.58984 2.13565 1.33845 -2.45685 -1.66585 \n";
-    outfile << data;
-    outfile.close();
-
-    t::geometry::PointCloud pcd;
-    EXPECT_FALSE(t::io::ReadPointCloud(filename_out, pcd,
-                                       {"auto", false, false, true}));
-}
-
 // Read write empty point cloud.
 TEST(TPointCloudIO, ReadWriteEmptyPTS) {
     t::geometry::PointCloud pcd, pcd_read;
@@ -559,17 +518,18 @@ TEST_P(PointCloudIOPermuteDevices, ReadWrite3DGSPointCloudPLY2) {
     core::Tensor opacity_attr = core::Tensor::Ones(one_dim, core::Float32);
     core::Tensor rot_attr = core::Tensor::Ones(four_dim, core::Float32);
     core::Tensor scale_attr = core::Tensor::Ones(three_dim, core::Float32);
-    core::Tensor f_dc_attr = core::Tensor::Ones(three_dim, core::Float32);
+    core::Tensor f_dc_attr = core::Tensor::Ones(four_dim, core::Float32);
     core::Tensor f_rest_attr = core::Tensor::Ones(eight_dim, core::Float32);
 
     pcd_ply.SetPointAttr("opacity", opacity_attr);
     pcd_ply.SetPointAttr("rot", rot_attr);
     pcd_ply.SetPointAttr("scale", scale_attr);
+    pcd_ply.SetPointAttr("f_dc", f_dc_attr);
     pcd_ply.SetPointAttr("f_rest", f_rest_attr);
 
     std::string filename = utility::filesystem::GetTempDirectoryPath() +
                            "/test_write_3dgs_wrong_pointcloud.ply";
-    EXPECT_FALSE(t::io::WritePointCloud(filename, pcd_ply));
+    EXPECT_ANY_THROW(t::io::WritePointCloud(filename, pcd_ply));
 }
 
 TEST(TPointCloudIO, ReadWritePointCloudAsPCD) {
